@@ -16,13 +16,13 @@
             } catch(e) {}
         })();
     </script>
-    <script src="/static/vendor/js/tailwindcss-cdn.js?v=2026.05.22"></script>
-    <script src="/static/vendor/js/lucide.js?v=2026.05.22"></script>
-    <script src="/static/js/theme.js?v=2026.05.22"></script>
-    <script src="/static/js/i18n.js?v=2026.05.22"></script>
-    <script src="/static/ltx-director-timeline.js?v=2026.05.22-ltx"></script>
+    <script src="/static/vendor/js/tailwindcss-cdn.js?v=2026.05.22.1"></script>
+    <script src="/static/vendor/js/lucide.js?v=2026.05.22.1"></script>
+    <script src="/static/js/theme.js?v=2026.05.22.1"></script>
+    <script src="/static/js/i18n.js?v=2026.05.22.1"></script>
+    <script src="/static/ltx-director-timeline.js?v=2026.05.22.1"></script>
     <style>
-        @import url('/static/vendor/css/fonts.css?v=2026.05.22');
+        @import url('/static/vendor/css/fonts.css?v=2026.05.22.1');
         :root { --ease:cubic-bezier(.4,0,.2,1); --page:#f8fafc; --grid:#d9e1ea; --panel:rgba(255,255,255,.92); --card:rgba(255,255,255,.96); --card-solid:#fff; --soft:#f8fafc; --soft-2:#f1f5f9; --line:#e8edf3; --line-2:#cbd5e1; --text:#111827; --muted:#64748b; --faint:#94a3b8; --shadow:rgba(15,23,42,.08); --strong:#111827; --strong-text:#fff; }
         .theme-dark { --page:#0b1020; --grid:rgba(148,163,184,.16); --panel:rgba(17,24,39,.9); --card:rgba(15,23,42,.96); --card-solid:#111827; --soft:#1e293b; --soft-2:#263449; --line:#334155; --line-2:#64748b; --text:#f8fafc; --muted:#cbd5e1; --faint:#94a3b8; --shadow:rgba(0,0,0,.28); --strong:#f8fafc; --strong-text:#0f172a; }
         * { box-sizing:border-box; }
@@ -276,9 +276,6 @@
         .comfy-body { min-height:0; height:100%; display:flex; flex-direction:column; gap:10px; }
         .node.sized.comfy-node .comfy-body { height:100%; }
         .comfy-content { flex:1; min-height:0; overflow:auto; display:flex; flex-direction:column; gap:10px; }
-        .comfy-local-prompt-block { display:flex; flex-direction:column; gap:4px; }
-        .comfy-local-prompt { min-height:72px !important; height:auto !important; padding:8px !important; line-height:1.45; resize:vertical; }
-        .prompt-list .comfy-prompt-field textarea { min-height:66px; padding:8px; line-height:1.45; resize:vertical; }
         .comfy-images { flex:0 0 auto; }
         .comfy-controls { flex:0 0 auto; margin-top:auto; display:flex; flex-direction:column; gap:10px; }
         .comfy-settings { flex:0 0 auto; margin:0; }
@@ -819,7 +816,7 @@
             .gate-list { grid-template-columns:repeat(3, minmax(0, 1fr)); }
         }
     </style>
-    <link rel="stylesheet" href="/static/css/theme.css?v=2026.05.22">
+    <link rel="stylesheet" href="/static/css/theme.css?v=2026.05.22.1">
 </head>
 <body>
     <div id="shell" class="shell no-canvas">
@@ -2191,7 +2188,7 @@
         }
         function openSmartCanvasPage(id){
             if(!id) return;
-            window.location.href = `/static/smart-canvas.html?id=${encodeURIComponent(id)}&v=2026.05.22`;
+            window.location.href = `/static/smart-canvas.html?id=${encodeURIComponent(id)}&v=2026.05.22.1`;
         }
         function toggleEmojiPicker(id, event){
             event?.preventDefault();
@@ -3251,7 +3248,6 @@
                 customHeight:'',
                 comfyWorkflow:'',
                 comfyParams:{},
-                comfyLocalPrompt:'',
                 count:1,
                 inputs:[]
             });
@@ -5992,55 +5988,6 @@
             if(!container) return;
             container.innerHTML = promptInputs.length ? `<div class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Prompts</div>${promptInputs.map(src => `<div class="text-[11px] text-slate-500 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 line-clamp-2">${escapeHtml(src.label)}</div>`).join('')}` : '';
         }
-        function comfyWorkflowPromptText(node){
-            return comfyFields(node, 'prompt')
-                .map(f => String(comfyParamValue(node, f) || '').trim())
-                .filter(Boolean)
-                .join('\n\n');
-        }
-        function comfyMergedPrompt(node, upstreamParts){
-            const upstream = (upstreamParts || []).filter(Boolean).join('\n\n');
-            const mode = node.mode || 'text';
-            const local = (mode === 'text' || mode === 'edit') ? String(node.comfyLocalPrompt || '').trim() : '';
-            const workflow = mode === 'custom' ? comfyWorkflowPromptText(node) : '';
-            return [upstream, local, workflow].filter(Boolean).join('\n\n');
-        }
-        function renderComfyPromptArea(container, node, promptInputs){
-            if(!container) return;
-            const mode = node.mode || 'text';
-            const wfPromptFields = mode === 'custom' ? comfyFields(node, 'prompt') : [];
-            const parts = [];
-            if(promptInputs.length){
-                parts.push(`<div class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Prompts</div>${promptInputs.map(src => `<div class="text-[11px] text-slate-500 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 line-clamp-2 mb-2">${escapeHtml(src.label)}</div>`).join('')}`);
-            }
-            if(mode === 'text' || mode === 'edit'){
-                parts.push(`<label class="field comfy-local-prompt-block">
-                    <div class="setting-title">${tr('canvas.prompt')}</div>
-                    <textarea class="setting-input comfy-local-prompt" data-field="comfyLocalPrompt" rows="3" placeholder="${escapeAttr(tr('comfy.promptPlaceholder'))}">${escapeHtml(node.comfyLocalPrompt || '')}</textarea>
-                </label>`);
-            }
-            wfPromptFields.forEach(f => {
-                parts.push(`<div class="comfy-prompt-field">${renderComfyCustomField(node, f)}</div>`);
-            });
-            container.innerHTML = parts.length
-                ? parts.join('')
-                : `<div class="text-[11px] text-slate-400 py-1">${tr('canvas.needPrompt')}</div>`;
-            container.querySelectorAll('textarea[data-comfy-param], input[data-comfy-param], select[data-comfy-param], button[data-comfy-param]').forEach(input => {
-                input.onmousedown = e => e.stopPropagation();
-                input.onclick = e => e.stopPropagation();
-                input.onchange = e => updateComfyField(node, input, e);
-                input.oninput = e => updateComfyField(node, input, e);
-            });
-            const localPrompt = container.querySelector('[data-field="comfyLocalPrompt"]');
-            if(localPrompt){
-                localPrompt.onmousedown = e => e.stopPropagation();
-                localPrompt.onclick = e => e.stopPropagation();
-                localPrompt.oninput = () => {
-                    node.comfyLocalPrompt = localPrompt.value;
-                    scheduleSave();
-                };
-            }
-        }
         function renderImageInputList(list, node, imageInputs, emptyText=null){
             if(!list) return;
             list.innerHTML = imageInputs.length ? '' : `<div class="text-[11px] text-gray-300 py-2">${escapeHtml(emptyText || tr('canvas.inputImagesEmpty'))}</div>`;
@@ -6231,7 +6178,7 @@
                     scheduleSave();
                 };
             });
-            renderComfyPromptArea(wrap.querySelector('.prompt-list'), node, promptInputs);
+            renderPromptPreview(wrap.querySelector('.prompt-list'), promptInputs);
             if(mode !== 'text' && !(mode === 'custom' && !imageFieldCount)) renderComfyImages(wrap.querySelector('.input-list'), node, imageInputs);
             renderComfySettings(wrap.querySelector('.comfy-settings'), node);
             wrap.querySelector('.comfy-run').onclick = e => { e.stopPropagation(); runCanvasGenerate(node.id); };
@@ -6404,11 +6351,6 @@
             }
             const field = input.dataset.field;
             if(!field) return;
-            if(field === 'comfyLocalPrompt'){
-                node.comfyLocalPrompt = input.value;
-                scheduleSave();
-                return;
-            }
             if(field === 'comfyWorkflow'){
                 node.comfyWorkflow = validComfyWorkflowName(input.value);
                 node.comfyParams = {};
@@ -6581,14 +6523,10 @@
                 if(!el) return;
                 const sources = orderedSources(gen, generatorSources(gen));
                 const imageInputs = sources.filter(src => src.refs?.length);
-                if(gen.type === 'comfy'){
-                    renderComfyPromptArea(el.querySelector('.prompt-list'), gen, sources.filter(src => src.prompt && !src.refs?.length));
-                    renderComfyImages(el.querySelector('.input-list'), gen, imageInputs);
-                } else {
-                    renderPromptPreview(el.querySelector('.prompt-list'), sources.filter(src => src.prompt && !src.refs?.length));
-                }
+                renderPromptPreview(el.querySelector('.prompt-list'), sources.filter(src => src.prompt && !src.refs?.length));
                 if(gen.type === 'generator') renderImageInputList(el.querySelector('.input-list'), gen, imageInputs);
                 if(gen.type === 'msgen') renderImageInputList(el.querySelector('.ms-img-list'), gen, imageInputs);
+                if(gen.type === 'comfy') renderComfyImages(el.querySelector('.input-list'), gen, imageInputs);
                 if(gen.type === 'ltxDirector') ltxSyncConnectedImagesToTimeline(gen);
                 if(gen.type === 'video') renderVideoImageInputs(el.querySelector('.video-img-list'), gen, imageInputs);
             });
@@ -7218,8 +7156,7 @@
             const node = nodes.find(n => n.id === nodeId);
             if(!node || (node.running && !opts.cascade)) return;
             const sources = orderedSources(node, generatorSources(node));
-            const upstreamPrompts = sources.map(s => s.prompt).filter(Boolean);
-            const prompt = comfyMergedPrompt(node, upstreamPrompts);
+            const prompt = sources.map(s => s.prompt).filter(Boolean).join('\n\n');
             const refs = sources.flatMap(s => s.refs || []);
             const mode = node.mode || 'text';
             const customImageFields = mode === 'custom' ? comfyFields(node, 'image') : [];
@@ -7297,12 +7234,10 @@
                         params[f.node] = params[f.node] || {};
                         params[f.node][f.input] = names[i] || '';
                     });
-                    const upstreamOnly = upstreamPrompts.join('\n\n');
                     promptFields.forEach(f => {
                         if(!f.node || !f.input) return;
                         params[f.node] = params[f.node] || {};
-                        const fieldVal = String(comfyParamValue(node, f) || '').trim();
-                        params[f.node][f.input] = fieldVal || upstreamOnly;
+                        params[f.node][f.input] = prompt;
                     });
                     settingFields.forEach(f => {
                         if(!f.node || !f.input) return;
