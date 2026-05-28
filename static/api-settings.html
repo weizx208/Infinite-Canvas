@@ -15,12 +15,12 @@
             } catch(e) {}
         })();
     </script>
-    <script src="/static/vendor/js/tailwindcss-cdn.js?v=2026.05.27.1"></script>
-    <script src="/static/vendor/js/lucide.js?v=2026.05.27.1"></script>
-    <script src="/static/js/theme.js?v=2026.05.27.1"></script>
-    <script src="/static/js/i18n.js?v=2026.05.27.1"></script>
-    <link rel="stylesheet" href="/static/css/theme.css?v=2026.05.27.1">
-    <link rel="stylesheet" href="/static/css/api-settings.css?v=2026.05.27.1">
+    <script src="/static/vendor/js/tailwindcss-cdn.js?v=2026.05.28"></script>
+    <script src="/static/vendor/js/lucide.js?v=2026.05.28"></script>
+    <script src="/static/js/theme.js?v=2026.05.28"></script>
+    <script src="/static/js/i18n.js?v=2026.05.28"></script>
+    <link rel="stylesheet" href="/static/css/theme.css?v=2026.05.28">
+    <link rel="stylesheet" href="/static/css/api-settings.css?v=2026.05.28">
 </head>
 <body>
     <div class="page">
@@ -41,7 +41,7 @@
                     <button class="api-link-btn" type="button" onclick="openRecommendApi()"><i data-lucide="sparkles" class="w-4 h-4"></i><span data-i18n="api.recommendApi">推荐API</span></button>
                 </aside>
 
-                <main class="content">
+                <main id="settingsContent" class="content">
                     <div class="content-head">
                         <div>
                             <div id="editorTitle" class="editor-title" data-i18n="api.provider">平台</div>
@@ -52,6 +52,8 @@
                             <button class="action-btn save-btn api-page-save-btn" type="button" onclick="saveProviders()"><i data-lucide="save" class="w-3.5 h-3.5"></i><span data-i18n="api.save">保存</span></button>
                         </div>
                     </div>
+
+                    <section id="providerOnboardingCard" class="provider-onboarding-card" hidden></section>
 
                     <section class="block">
                         <div class="block-head">
@@ -257,8 +259,16 @@
                             <div id="msLoraList" class="lora-list"></div>
                         </section>
                 </div>
-
             </main>
+                <main id="recommendContent" class="content recommend-content" hidden>
+                    <div class="content-head">
+                        <div>
+                            <div class="editor-title">推荐平台</div>
+                            <div class="editor-sub">获取 Key 后保存，右侧会切换到刚保存的平台配置。</div>
+                        </div>
+                    </div>
+                    <section id="recommendPanel" class="provider-onboarding-card recommend-inline-card"></section>
+                </main>
         </div>
         </div>
     </div>
@@ -352,6 +362,6 @@
         </div>
     </div>
 
-    <script src="/static/js/api-settings.js?v=2026.05.27.1"></script>
+    <script src="/static/js/api-settings.js?v=2026.05.28"></script>
 </body>
 </html>

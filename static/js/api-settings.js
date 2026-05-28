@@ -19,6 +19,10 @@ const rhAppsList = document.getElementById('rhAppsList');
 const rhWorkflowsList = document.getElementById('rhWorkflowsList');
 const rhAppsCount = document.getElementById('rhAppsCount');
 const rhWorkflowsCount = document.getElementById('rhWorkflowsCount');
+const settingsContent = document.getElementById('settingsContent');
+const recommendContent = document.getElementById('recommendContent');
+const recommendPanel = document.getElementById('recommendPanel');
+const providerOnboardingCard = document.getElementById('providerOnboardingCard');
 const rhWorkflowEditorOverlay = document.getElementById('rhWorkflowEditorOverlay');
 const rhWorkflowEditorTitle = document.getElementById('rhWorkflowEditorTitle');
 const rhWorkflowEditorSub = document.getElementById('rhWorkflowEditorSub');
@@ -44,22 +48,55 @@ const MS_BUILTIN_IMAGE_MODELS = [
     'Qwen/Qwen-Image-Edit-2511',
     'black-forest-labs/FLUX.2-klein-9B'
 ];
+const MS_DEFAULT_BASE_URL = 'https://api-inference.modelscope.cn/v1';
+const RH_DEFAULT_BASE_URL = 'https://www.runninghub.cn';
+const RH_DEFAULT_IMAGE_MODELS = ['/openapi/v2/text2image'];
+const ONBOARDING_GUIDES = {
+    modelscope:{
+        title:'ModelScope 新手引导',
+        desc:'先获取 Token，填入 API Key 并保存后，右侧完整设置会自动显示。',
+        primaryLabel:'获取 Token · 国内',
+        secondaryLabel:'获取 Token · 国外',
+        primaryUrl:'https://www.modelscope.cn/my/access/token',
+        secondaryUrl:'https://www.modelscope.ai/my/access/token'
+    },
+    runninghub:{
+        title:'RunningHub 新手引导',
+        desc:'RH 有 RH币和账户余额两种 Key，RH币必填，账户余额可选。',
+        primaryLabel:'获取 Key · 国内',
+        secondaryLabel:'获取 Key · 国外',
+        primaryUrl:'https://www.runninghub.cn/enterprise-api/consumerApi?inviteCode=rh-v1331',
+        secondaryUrl:'https://www.runninghub.ai/enterprise-api/consumerApi?inviteCode=rh-v1331',
+        walletPrimaryLabel:'获取余额 Key · 国内',
+        walletSecondaryLabel:'获取余额 Key · 国外',
+        walletPrimaryUrl:'https://www.runninghub.cn/enterprise-api/sharedApi?inviteCode=rh-v1331',
+        walletSecondaryUrl:'https://www.runninghub.ai/enterprise-api/sharedApi?inviteCode=rh-v1331'
+    }
+};
 let rhWorkflowEditorState = { open:false, index:-1, entry:null, config:null, expanded:{}, activeNodeId:'', graph:{ k:1, x:0, y:0, w:0, h:0 }, pan:null, bound:false, previewParams:{}, previewRunning:false, previewStatus:'', previewOutputs:[] };
 let rhEditorMode = 'workflow';
+let recommendInlineOpen = false;
+let providerDragId = '';
 const RECOMMENDED_APIS = [
     {
         name:'APIMART',
         base_url:'https://api.apimart.ai',
         protocol:'apimart',
         register_url:'https://apimart.ai/zh/register?aff=1uyAbb',
-        tags:['图像模型','视频模型','LLM模型']
+        tags:['图像模型','视频模型','LLM模型'],
+        icons:['IMG','VID','LLM'],
+        summary:'聚合多类型生成模型，适合希望用一套配置快速接入图像、视频和 LLM 的用户。',
+        advantages:['模型类型覆盖广', '适合多节点混合工作流', '异步协议适合长任务']
     },
     {
         name:'FHL',
         base_url:'https://www.fhl.mom',
         protocol:'openai',
         register_url:'https://www.fhl.mom/register?aff=86L574B4T2N9',
-        tags:['Codex','GPT image 2模型']
+        tags:['Codex','GPT image 2模型'],
+        icons:['CODEX','GPT','IMG'],
+        summary:'偏向 OpenAI 兼容体验，适合需要 Codex、GPT image 2 等模型能力的配置。',
+        advantages:['OpenAI 兼容接入', '配置路径简单', '适合图像与代码相关模型']
     }
 ];
 
@@ -149,6 +186,10 @@ function isProviderTemporarilyHidden(item){
 }
 function visibleProviders(){
     return (providers || []).filter(item => !isProviderTemporarilyHidden(item));
+}
+function isFixedProvider(itemOrId){
+    const id = typeof itemOrId === 'string' ? itemOrId : itemOrId?.id;
+    return id === 'modelscope' || id === 'runninghub';
 }
 function unique(values){
     const seen = new Set();
@@ -306,6 +347,156 @@ function rhFreeKeyHintText(item){
 }
 function rhWalletKeyHintText(item){
     return item?.has_wallet_key ? `当前账户余额 Key 已保存：${item.wallet_key_env || 'API/.env'} ${item.wallet_key_preview || ''}` : '还没有保存账户余额 Key。验证地址和拉取模型会优先使用它。';
+}
+function isNewUserProvider(item){
+    if(!item) return false;
+    if(item.id === 'modelscope') return !item.has_key;
+    if(item.id === 'runninghub') return !item.has_key;
+    return false;
+}
+function renderProviderOnboarding(item){
+    if(!providerOnboardingCard) return;
+    const guide = ONBOARDING_GUIDES[item?.id];
+    const visible = Boolean(!recommendInlineOpen && guide && isNewUserProvider(item));
+    providerOnboardingCard.hidden = !visible;
+    document.body.classList.toggle('show-provider-onboarding', visible);
+    if(!visible){
+        providerOnboardingCard.innerHTML = '';
+        return;
+    }
+    if(item.id === 'modelscope'){
+        providerOnboardingCard.innerHTML = `
+            <div class="onboarding-head">
+                <div>
+                    <div class="onboarding-title">${escapeHtml(guide.title)}</div>
+                    <div class="onboarding-desc">${escapeHtml(guide.desc)}</div>
+                </div>
+                <span class="onboarding-badge">NEW</span>
+            </div>
+            <div class="onboarding-step-panel onboarding-rh-linear-panel onboarding-ms-linear-panel">
+                <div class="onboarding-rh-panel-head">
+                    <div>
+                        <div class="onboarding-step-title">获取 Token 后填写并保存</div>
+                    </div>
+                    <i data-lucide="key-round" class="onboarding-rh-icon w-4 h-4"></i>
+                </div>
+                <div class="onboarding-rh-linear-rows">
+                    <div class="onboarding-rh-linear-row onboarding-ms-linear-row">
+                        <div class="onboarding-rh-source-group">
+                            <div class="onboarding-rh-source-label">ModelScope Token</div>
+                            <div class="onboarding-key-actions onboarding-rh-key-actions">
+                                <a class="onboarding-key-btn" href="${escapeAttr(guide.primaryUrl)}" target="_blank" rel="noopener noreferrer"><i data-lucide="key-round" class="w-3.5 h-3.5"></i><span>${escapeHtml(guide.primaryLabel)}</span></a>
+                                <a class="onboarding-key-btn" href="${escapeAttr(guide.secondaryUrl)}" target="_blank" rel="noopener noreferrer"><i data-lucide="globe-2" class="w-3.5 h-3.5"></i><span>${escapeHtml(guide.secondaryLabel)}</span></a>
+                            </div>
+                        </div>
+                        <div class="recommend-flow-arrow onboarding-flow-arrow onboarding-rh-row-arrow" aria-hidden="true"><span></span><b></b></div>
+                        <label class="onboarding-key-field onboarding-rh-row-field">
+                            <span>API Key</span>
+                            <input type="password" value="${escapeAttr(keyInput?.value || '')}" placeholder="粘贴 ModelScope Token" oninput="syncOnboardingKeyInput('standard', this.value)">
+                        </label>
+                    </div>
+                </div>
+                <div class="onboarding-rh-save-line">
+                    <button class="onboarding-save-btn onboarding-rh-save-all" type="button" onclick="saveKeyOnly()"><i data-lucide="check" class="w-3.5 h-3.5"></i><span>保存</span></button>
+                </div>
+            </div>
+        `;
+        refreshIcons();
+        return;
+    }
+    if(item.id === 'runninghub'){
+        providerOnboardingCard.innerHTML = `
+            <div class="onboarding-head">
+                <div>
+                    <div class="onboarding-title">${escapeHtml(guide.title)}</div>
+                    <div class="onboarding-desc">${escapeHtml(guide.desc)}</div>
+                </div>
+                <span class="onboarding-badge">NEW</span>
+            </div>
+            <div class="onboarding-step-panel onboarding-rh-linear-panel">
+                <div class="onboarding-rh-panel-head">
+                    <div>
+                        <div class="onboarding-step-title">获取 Key 后填写并保存</div>
+                    </div>
+                    <i data-lucide="key-round" class="onboarding-rh-icon w-4 h-4"></i>
+                </div>
+                <div class="onboarding-rh-linear-rows">
+                    <div class="onboarding-rh-linear-row">
+                        <div class="onboarding-rh-source-group">
+                            <div class="onboarding-rh-source-label">RH币 Key</div>
+                            <div class="onboarding-key-actions onboarding-rh-key-actions">
+                                <a class="onboarding-key-btn" href="${escapeAttr(guide.primaryUrl)}" target="_blank" rel="noopener noreferrer"><i data-lucide="coins" class="w-3.5 h-3.5"></i><span>${escapeHtml(guide.primaryLabel)}</span></a>
+                                <a class="onboarding-key-btn" href="${escapeAttr(guide.secondaryUrl)}" target="_blank" rel="noopener noreferrer"><i data-lucide="globe-2" class="w-3.5 h-3.5"></i><span>${escapeHtml(guide.secondaryLabel)}</span></a>
+                            </div>
+                        </div>
+                        <div class="recommend-flow-arrow onboarding-flow-arrow onboarding-rh-row-arrow" aria-hidden="true"><span></span><b></b></div>
+                        <label class="onboarding-key-field onboarding-rh-row-field">
+                            <span>RH币 API Key · 必填</span>
+                            <input type="password" value="${escapeAttr(rhFreeKeyInput?.value || '')}" placeholder="粘贴 RH币 API Key" oninput="syncOnboardingKeyInput('free', this.value)">
+                        </label>
+                    </div>
+                    <div class="onboarding-rh-linear-row">
+                        <div class="onboarding-rh-source-group">
+                            <div class="onboarding-rh-source-label">账户余额 Key</div>
+                            <div class="onboarding-key-actions onboarding-rh-key-actions">
+                                <a class="onboarding-key-btn" href="${escapeAttr(guide.walletPrimaryUrl)}" target="_blank" rel="noopener noreferrer"><i data-lucide="wallet" class="w-3.5 h-3.5"></i><span>${escapeHtml(guide.walletPrimaryLabel)}</span></a>
+                                <a class="onboarding-key-btn" href="${escapeAttr(guide.walletSecondaryUrl)}" target="_blank" rel="noopener noreferrer"><i data-lucide="globe-2" class="w-3.5 h-3.5"></i><span>${escapeHtml(guide.walletSecondaryLabel)}</span></a>
+                            </div>
+                        </div>
+                        <div class="recommend-flow-arrow onboarding-flow-arrow onboarding-rh-row-arrow" aria-hidden="true"><span></span><b></b></div>
+                        <label class="onboarding-key-field onboarding-rh-row-field">
+                            <span>账户余额 API Key · 可选</span>
+                            <input type="password" value="${escapeAttr(rhWalletKeyInput?.value || '')}" placeholder="需要账户余额时再粘贴" oninput="syncOnboardingKeyInput('wallet', this.value)">
+                        </label>
+                    </div>
+                </div>
+                <div class="onboarding-rh-save-line">
+                    <button class="onboarding-save-btn onboarding-rh-save-all" type="button" onclick="saveOnboardingRunningHubKey()"><i data-lucide="check" class="w-3.5 h-3.5"></i><span>保存</span></button>
+                </div>
+            </div>
+        `;
+        refreshIcons();
+    }
+}
+function syncOnboardingKeyInput(kind, value){
+    if(kind === 'free' && rhFreeKeyInput) rhFreeKeyInput.value = value || '';
+    else if(kind === 'wallet' && rhWalletKeyInput) rhWalletKeyInput.value = value || '';
+    else if(keyInput) keyInput.value = value || '';
+}
+async function saveOnboardingRunningHubKey(){
+    const freeKey = rhFreeKeyInput?.value.trim() || '';
+    if(!freeKey){ alert('请输入 RH币 API Key'); return; }
+    const item = provider();
+    if(!item || item.id !== 'runninghub') return;
+    syncEditor();
+    const ok = await saveProviders();
+    if(ok){
+        if(rhFreeKeyInput) rhFreeKeyInput.value = '';
+        if(rhWalletKeyInput) rhWalletKeyInput.value = '';
+    }
+}
+function applyProviderOnboardingDefaults(id){
+    const item = providers.find(provider => provider.id === id);
+    if(!item) return;
+    if(id === 'modelscope'){
+        item.base_url = MS_DEFAULT_BASE_URL;
+        item.protocol = 'openai';
+        item.image_models = unique([...MS_BUILTIN_IMAGE_MODELS, ...(item.image_models || [])]);
+        item.chat_models = unique([...(item.chat_models || [])]);
+        item.ms_defaults_version = Math.max(3, Number(item.ms_defaults_version || 0));
+    } else if(id === 'runninghub'){
+        item.base_url = RH_DEFAULT_BASE_URL;
+        item.protocol = 'runninghub';
+        item.image_models = unique([...(item.image_models || []), ...RH_DEFAULT_IMAGE_MODELS]);
+        ensureRunningHubLists(item);
+    }
+    selectedId = item.id;
+    renderEditor();
+    setStatus('已显示默认配置，填写 Key 后点击保存生效');
+}
+function refreshProviderOnboarding(){
+    renderProviderOnboarding(provider());
+    refreshIcons();
 }
 function syncEditor(){
     const item = provider();
@@ -1593,77 +1784,131 @@ function renderRhEntryList(target, list, kind){
     `).join('');
 }
 function openRecommendApi(){
+    recommendInlineOpen = true;
+    syncRecommendView();
     renderRecommendApi();
-    if(recommendApiOverlay) recommendApiOverlay.style.display = 'flex';
-    refreshIcons();
+    renderProviderOnboarding(provider());
 }
 function closeRecommendApi(){
     if(recommendApiOverlay) recommendApiOverlay.style.display = 'none';
+    recommendInlineOpen = false;
+    syncRecommendView();
+    renderRecommendApi();
+    renderEditor();
+}
+function syncRecommendView(){
+    if(settingsContent) settingsContent.hidden = recommendInlineOpen;
+    if(recommendContent) recommendContent.hidden = !recommendInlineOpen;
+    document.body.classList.toggle('show-recommend-mode', recommendInlineOpen);
 }
 function renderRecommendApi(){
-    if(!recommendApiList) return;
-    recommendApiList.innerHTML = RECOMMENDED_APIS.map((api, index) => `
-        <section class="recommend-card" style="--recommend-index:${index}">
-            <div class="recommend-name">
-                <span>${escapeHtml(api.name)}</span>
-                <span class="recommend-badge">${escapeHtml(api.protocol === 'apimart' ? 'APIMart' : 'OpenAI')}</span>
+    if(!recommendPanel) return;
+    if(!recommendInlineOpen){
+        recommendPanel.innerHTML = '';
+        return;
+    }
+    const html = RECOMMENDED_APIS.map((api, index) => `
+        <section class="recommend-card recommend-platform-card" style="--recommend-index:${index}">
+            <div class="recommend-platform-info">
+                <div class="recommend-platform-head">
+                    <div>
+                        <div class="recommend-name"><span>${escapeHtml(api.name)}</span></div>
+                    </div>
+                    <span class="recommend-badge">${escapeHtml(api.protocol === 'apimart' ? 'APIMart' : 'OpenAI')}</span>
+                </div>
+                <p class="recommend-platform-summary">${escapeHtml(api.summary)}</p>
+                <div class="recommend-tags">
+                    ${api.tags.map(tag => `<span class="recommend-tag">${escapeHtml(tag)}</span>`).join('')}
+                </div>
             </div>
-            <div class="recommend-tags">
-                ${api.tags.map(tag => `<span class="recommend-tag"><i data-lucide="${tag.toLowerCase().includes('视频') ? 'clapperboard' : tag.toLowerCase().includes('llm') || tag.toLowerCase().includes('codex') ? 'bot' : 'image'}" class="w-3 h-3"></i>${escapeHtml(tag)}</span>`).join('')}
-            </div>
-            <div class="recommend-actions">
-                <a class="recommend-register" href="${escapeAttr(api.register_url)}" target="_blank" rel="noopener noreferrer"><i data-lucide="key-round" class="w-3.5 h-3.5"></i><span data-i18n="api.register">获取key</span></a>
-                <div class="recommend-flow-arrow" aria-hidden="true"><span></span><i data-lucide="arrow-right" class="w-3.5 h-3.5"></i></div>
-                <button class="recommend-fill" type="button" onclick="applyRecommendedApi(${index})"><i data-lucide="wand-sparkles" class="w-3.5 h-3.5"></i><span data-i18n="api.autoFill">自动填写</span></button>
+            <div class="recommend-platform-setup">
+                <div class="recommend-setup-title">快捷设置</div>
+                <div class="recommend-quick-stack recommend-setup-flow">
+                    <div class="recommend-guide-source onboarding-rh-source-group">
+                        <div class="onboarding-rh-source-label">获取 Key</div>
+                        <div class="onboarding-key-actions onboarding-rh-key-actions recommend-single-action">
+                            <a class="onboarding-key-btn recommend-guide-key-btn" href="${escapeAttr(api.register_url)}" target="_blank" rel="noopener noreferrer"><i data-lucide="key-round" class="w-3.5 h-3.5"></i><span>获取 Key</span></a>
+                        </div>
+                    </div>
+                    <div class="recommend-flow-arrow onboarding-flow-arrow recommend-guide-arrow" aria-hidden="true"><span></span><b></b></div>
+                    <div class="recommend-guide-save">
+                        <label class="onboarding-key-field onboarding-rh-row-field">
+                            <span>API Key</span>
+                            <input type="password" data-recommend-key="${index}" placeholder="粘贴 ${escapeAttr(api.name)} API Key">
+                        </label>
+                        <button class="onboarding-save-btn recommend-guide-save-btn" type="button" onclick="saveRecommendedApi(${index})"><span>保存</span></button>
+                    </div>
+                </div>
             </div>
         </section>
     `).join('');
-    if(window.StudioI18n) window.StudioI18n.apply(recommendApiList);
+    recommendPanel.innerHTML = `
+        <div class="onboarding-head">
+            <div>
+                <div class="onboarding-title">推荐平台</div>
+                <div class="onboarding-desc">选择适合的平台，获取 Key 后在右侧保存为默认配置。</div>
+            </div>
+        </div>
+        <div class="recommend-api-body recommend-inline-body">${html}</div>
+        <div class="recommend-note">提示：账户内需要至少 0.05 元余额，才能验证地址并拉取模型。</div>
+        <div class="recommend-account-invite">
+            <div>
+                <div class="recommend-account-title">GPT / Codex / Claude 账号订阅</div>
+                <div class="recommend-account-desc">独立订阅、成品账号等选择，适合想直冲自己账户的人。</div>
+            </div>
+            <a class="onboarding-key-btn recommend-account-link" href="https://bewild.ai?code=WULIDX" target="_blank" rel="noopener noreferrer"><i data-lucide="external-link" class="w-3.5 h-3.5"></i><span>查看方案</span></a>
+        </div>
+    `;
+    refreshIcons();
 }
-function applyRecommendedApi(index){
+function recommendedProviderForApi(api){
+    let item = providers.find(provider => String(provider.name || '').toLowerCase() === api.name.toLowerCase());
+    if(item) return item;
+    const baseId = normalizeId(api.name) || 'custom-api';
+    let id = baseId;
+    let suffix = 2;
+    while(providers.some(provider => provider.id === id)) id = `${baseId}-${suffix++}`;
+    item = {
+        id,
+        name:api.name,
+        base_url:api.base_url,
+        protocol:api.protocol,
+        image_generation_endpoint:'',
+        image_edit_endpoint:'',
+        enabled:true,
+        primary:false,
+        image_models:[],
+        chat_models:[],
+        video_models:[],
+        has_key:false,
+        key_preview:''
+    };
+    providers.push(item);
+    return item;
+}
+async function saveRecommendedApi(index){
     const api = RECOMMENDED_APIS[index];
     if(!api) return;
-    syncEditor();
-    let item = providers.find(provider => String(provider.name || '').toLowerCase() === api.name.toLowerCase());
-    if(!item){
-        const baseId = normalizeId(api.name) || 'custom-api';
-        let id = baseId;
-        let suffix = 2;
-        while(providers.some(provider => provider.id === id)) id = `${baseId}-${suffix++}`;
-        item = {
-            id,
-            name:api.name,
-            base_url:api.base_url,
-            protocol:api.protocol,
-            image_generation_endpoint:'',
-            image_edit_endpoint:'',
-            enabled:true,
-            primary:false,
-            image_models:[],
-            chat_models:[],
-            video_models:[],
-            has_key:false,
-            key_preview:''
-        };
-        providers.push(item);
-    }
+    const input = recommendPanel?.querySelector(`[data-recommend-key="${index}"]`);
+    const key = input?.value.trim() || '';
+    if(!key){ alert('请输入 API Key'); return; }
+    const item = recommendedProviderForApi(api);
     selectedId = item.id;
+    recommendInlineOpen = false;
+    syncRecommendView();
+    renderProviderList();
     renderEditor();
-    nameInput.value = api.name;
-    baseInput.value = api.base_url;
+    keyInput.value = key;
     if(protocolInput){
         protocolInput.value = api.protocol;
         protocolInput.dispatchEvent(new Event('change'));
     }
     syncEditor();
-    updateIdPreview();
-    renderProviderList();
-    editorTitle.textContent = item.name || item.id;
-    closeRecommendApi();
-    setStatus(`已填写 ${api.name}，请填入 API Key 后保存或验证。`);
+    const ok = await saveProviders();
+    if(ok) setStatus(`已保存 ${api.name}，当前显示该平台配置。`);
 }
 function sortedProviders(){
-    const order = ['modelscope', 'runninghub', 'comfly'];
+    const order = ['modelscope', 'runninghub'];
     return visibleProviders().sort((a, b) => {
         const ai = order.indexOf(a.id);
         const bi = order.indexOf(b.id);
@@ -1672,6 +1917,11 @@ function sortedProviders(){
         if(bi === -1) return -1;
         return ai - bi;
     });
+}
+function providerDragAttrs(item){
+    if(isFixedProvider(item)) return '';
+    const id = escapeAttr(item.id);
+    return ` draggable="true" data-provider-id="${id}" ondragstart="handleProviderDragStart(event,'${id}')" ondragover="handleProviderDragOver(event,'${id}')" ondrop="handleProviderDrop(event,'${id}')" ondragend="handleProviderDragEnd()"`;
 }
 function renderProviderList(){
     providerList.innerHTML = sortedProviders().map(item => {
@@ -1707,7 +1957,8 @@ function renderProviderList(){
             `;
         }
         return `
-            <button class="provider-card ${active} ${stateClass}" type="button" onclick="selectProvider('${escapeHtml(item.id)}')">
+            <button class="provider-card provider-card-sortable ${active} ${stateClass}" type="button" onclick="selectProvider('${escapeHtml(item.id)}')"${providerDragAttrs(item)}>
+                <span class="provider-drag-handle" aria-hidden="true"><i data-lucide="grip-vertical" class="w-3.5 h-3.5"></i></span>
                 <span class="provider-mark"><i data-lucide="${item.has_key ? 'key-round' : 'key'}" class="w-4 h-4"></i></span>
                 <span class="provider-info">
                     <div class="provider-name">${escapeHtml(item.name || item.id)}</div>
@@ -1721,6 +1972,45 @@ function renderProviderList(){
         `;
     }).join('');
     refreshIcons();
+}
+function handleProviderDragStart(event, id){
+    const item = providers.find(provider => provider.id === id);
+    if(!item || isFixedProvider(item)){
+        event.preventDefault();
+        return;
+    }
+    providerDragId = id;
+    event.currentTarget.classList.add('is-dragging');
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', id);
+}
+function handleProviderDragOver(event, id){
+    if(!providerDragId || providerDragId === id || isFixedProvider(id)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    providerList?.querySelectorAll('.provider-card-drop-target').forEach(el => el.classList.remove('provider-card-drop-target'));
+    event.currentTarget.classList.add('provider-card-drop-target');
+}
+function handleProviderDrop(event, targetId){
+    event.preventDefault();
+    providerList?.querySelectorAll('.provider-card-drop-target').forEach(el => el.classList.remove('provider-card-drop-target'));
+    const sourceId = providerDragId || event.dataTransfer.getData('text/plain');
+    providerDragId = '';
+    if(!sourceId || sourceId === targetId || isFixedProvider(sourceId) || isFixedProvider(targetId)) return;
+    const sourceIndex = providers.findIndex(item => item.id === sourceId);
+    const targetIndex = providers.findIndex(item => item.id === targetId);
+    if(sourceIndex < 0 || targetIndex < 0) return;
+    const [moved] = providers.splice(sourceIndex, 1);
+    const adjustedTargetIndex = providers.findIndex(item => item.id === targetId);
+    providers.splice(adjustedTargetIndex, 0, moved);
+    renderProviderList();
+    saveProviders();
+}
+function handleProviderDragEnd(){
+    providerDragId = '';
+    providerList?.querySelectorAll('.is-dragging,.provider-card-drop-target').forEach(el => {
+        el.classList.remove('is-dragging', 'provider-card-drop-target');
+    });
 }
 function renderEditor(){
     const item = provider();
@@ -1753,6 +2043,8 @@ function renderEditor(){
     }
     document.body.classList.toggle('show-ms', isModelScope);
     document.body.classList.toggle('show-runninghub', isRunningHub);
+    renderProviderOnboarding(item);
+    renderRecommendApi();
     if(runninghubConfigBlock){
         runninghubConfigBlock.hidden = !isRunningHub;
         runninghubConfigBlock.style.display = isRunningHub ? 'flex' : 'none';
@@ -1809,11 +2101,13 @@ async function probeAsync(){
             protocolInput.dispatchEvent(new Event('change'));
         }
         const rawJson = JSON.stringify(data.raw, null, 2);
+        const probeMessage = String(data.message || '');
+        const hideTasksEndpointTip = probeMessage.includes('/v1/tasks/');
         const color = isAsync ? '#15803d' : data.ok === null ? '#b45309' : '#64748b';
         const icon = isAsync ? '✓' : '⚠';
         const proto = isAsync ? 'APIMart 异步' : 'OpenAI 兼容';
         showVerifyResult(`
-            <div style="font-size:11px;font-weight:800;color:${color}">${icon} ${escapeHtml(data.message)}</div>
+            ${hideTasksEndpointTip ? '' : `<div style="font-size:11px;font-weight:800;color:${color}">${icon} ${escapeHtml(probeMessage)}</div>`}
             <div style="font-size:11px;color:var(--muted);font-weight:700;margin-top:2px">协议已自动设置为：<strong style="color:var(--text)">${proto}</strong></div>
             <details style="margin-top:6px">
                 <summary style="font-size:10.5px;color:var(--muted);cursor:pointer;font-weight:700;user-select:none">▸ 查看原始响应 (HTTP ${data.status_code})</summary>
@@ -2128,11 +2422,17 @@ function removeMsLora(index){
 }
 function selectProvider(id){
     if(isProviderTemporarilyHidden(providers.find(item => item.id === id))) return;
+    recommendInlineOpen = false;
+    syncRecommendView();
+    renderRecommendApi();
     syncEditor();
     selectedId = id;
     renderEditor();
 }
 function addProvider(){
+    recommendInlineOpen = false;
+    syncRecommendView();
+    renderRecommendApi();
     syncEditor();
     let id = 'custom-api';
     let index = 2;
@@ -2287,7 +2587,8 @@ window.addEventListener('message', event => {
     if(event.data?.type === 'studio-theme' && window.StudioTheme) window.StudioTheme.set(event.data.theme);
     if(event.data?.type === 'studio-lang' && window.StudioI18n) {
         window.StudioI18n.set(event.data.lang);
-        renderEditor();
+        if(recommendInlineOpen) renderRecommendApi();
+        else renderEditor();
     }
 });
 rhWorkflowEditorOverlay?.addEventListener('mousedown', event => {
@@ -2308,14 +2609,18 @@ recommendApiOverlay?.addEventListener('mousedown', event => {
     if(event.target === recommendApiOverlay) closeRecommendApi();
 });
 window.addEventListener('studio-lang-change', () => {
-    renderEditor();
-    if(recommendApiOverlay?.style.display === 'flex') renderRecommendApi();
+    if(recommendInlineOpen) renderRecommendApi();
+    else renderEditor();
 });
 window.onload = () => {
     if(window.StudioTheme) window.StudioTheme.apply();
     if(window.StudioI18n) window.StudioI18n.apply();
+    syncRecommendView();
     loadProviders();
     // 平台名输入时实时预览生成的 ID
     if(nameInput) nameInput.addEventListener('input', updateIdPreview);
     if(protocolInput) protocolInput.addEventListener('change', updateProtocolFromInput);
+    [keyInput, rhFreeKeyInput, rhWalletKeyInput].forEach(input => {
+        if(input) input.addEventListener('input', refreshProviderOnboarding);
+    });
 };

@@ -1040,10 +1040,10 @@ function renderVideoToggleControl(key, label){
     return `<button type="button" class="setting-check ${on ? 'active' : ''}" data-toggle-param="${escapeHtml(key)}"><span class="check-box"></span><span>${escapeHtml(label)}</span></button>`;
 }
 function renderTempShUploadControl(){
-    return `<button type="button" class="smart-pill cloud-upload-pill" data-temp-sh-upload-video title="上传当前输入视频到云端直链"><i data-lucide="upload-cloud"></i><span>上传云端</span></button>`;
+    return `<button type="button" class="smart-pill cloud-upload-pill" data-temp-sh-upload-video title="上传当前输入图片或视频到云端直链"><i data-lucide="upload-cloud"></i><span>上传云端</span></button>`;
 }
 function renderManualVideoUrlControl(){
-    return `<button type="button" class="smart-pill manual-video-url-pill" data-manual-video-url title="手动输入视频 URL"><i data-lucide="link"></i><span>输入网址</span></button>`;
+    return `<button type="button" class="smart-pill manual-video-url-pill" data-manual-video-url title="手动输入媒体 URL"><i data-lucide="link"></i><span>输入网址</span></button>`;
 }
 function optionHtml(value, label, selected){
     return `<option value="${escapeHtml(value)}" ${String(value) === String(selected) ? 'selected' : ''}>${escapeHtml(label ?? value)}</option>`;
@@ -1758,90 +1758,133 @@ function rhMediaForRun(prompt, refs){
     };
 }
 function tempShUploadedUrlFor(url){
-    const match = (settings.videoTempShLinks || []).find(item => item?.source === url && item?.url);
+    const source = String(url || '');
+    const match = (settings.videoTempShLinks || []).find(item =>
+        item?.url && (item?.source === source || item?.originalLocalUrl === source || item?.url === source)
+    );
     return match?.url || url;
+}
+function mediaRefSourceUrl(ref){
+    return ref?.sourceUrl || ref?.originalLocalUrl || ref?.url || '';
 }
 function applyUploadedUrlsToSmartRefs(refs){
     return (refs || []).map(ref => {
         if(!ref?.url) return ref;
-        const url = tempShUploadedUrlFor(ref.url);
+        const sourceUrl = mediaRefSourceUrl(ref);
+        const url = tempShUploadedUrlFor(sourceUrl);
         return url && url !== ref.url ? {...ref, url, originalLocalUrl:ref.originalLocalUrl || ref.url} : ref;
     });
 }
 function manualSmartVideoLink(){
     return (settings.videoTempShLinks || []).find(item => item?.manual === true && item?.url) || null;
 }
-function currentSmartMediaLinks(){
-    const request = buildPromptRequest(activeSettingsSubject(), null, true, smartLoopContext);
-    const refs = (request.refs || []).filter(ref => ref?.url && ['image','video'].includes(mediaKindForItem(ref)));
-    return refs.map(ref => {
-        const uploaded = tempShUploadedUrlFor(ref.url);
-        return uploaded && uploaded !== ref.url ? uploaded : '';
+function manualSmartMediaLinks(){
+    return (settings.videoTempShLinks || []).filter(item => item?.manual === true && item?.url);
+}
+function renderedInputMediaRefs(){
+    if(!inputThumbsRow) return [];
+    return [...inputThumbsRow.querySelectorAll('.input-thumb')].map((el, index) => ({
+        url:el.dataset.url || '',
+        sourceUrl:el.dataset.sourceUrl || el.dataset.url || '',
+        nodeId:el.dataset.nodeId || '',
+        imageIndex:Number.isFinite(Number(el.dataset.imageIndex)) ? Number(el.dataset.imageIndex) : index,
+        name:tr('smart.inputNum').replace('{n}', String(index + 1)),
+        role:`image_${index + 1}`
+    })).filter(ref => ref.url);
+}
+function currentSmartMediaRefs(node){
+    if(!node) return [];
+    const request = buildPromptRequest(node, null, true, smartLoopContext);
+    return (request.refs || []).filter(ref => ref?.url && ['image','video'].includes(mediaKindForItem(ref)));
+}
+function currentUploadMediaRefs(node){
+    const rendered = renderedInputMediaRefs();
+    if(rendered.length) return rendered;
+    return currentSmartMediaRefs(node);
+}
+function currentSmartMediaLinks(node=null){
+    return currentUploadMediaRefs(node || activeSettingsSubject()).map(ref => {
+        const sourceUrl = mediaRefSourceUrl(ref);
+        const uploaded = tempShUploadedUrlFor(sourceUrl);
+        return uploaded && uploaded !== sourceUrl ? uploaded : '';
     }).filter(Boolean);
 }
 function clearManualSmartVideoUrl(){
     settings.videoTempShLinks = (settings.videoTempShLinks || []).filter(item => item?.manual !== true);
 }
+function splitManualMediaUrls(text){
+    return String(text || '')
+        .split(/[\s,，]+/)
+        .map(url => url.trim())
+        .filter(Boolean);
+}
 function applyTempShUrlToSmartRef(ref, uploadedUrl){
-    if(!ref?.nodeId || !Number.isFinite(Number(ref.imageIndex))) return false;
-    const node = nodes.find(n => n.id === ref.nodeId);
+    if(!ref?.url || !uploadedUrl) return false;
+    const node = ref?.nodeId ? nodes.find(n => n.id === ref.nodeId) : activeSettingsSubject();
+    if(!node?.images?.length) return false;
     const index = Number(ref.imageIndex);
-    if(!node?.images?.[index]) return false;
-    node.images[index] = {
-        ...node.images[index],
-        url:uploadedUrl,
+    const targetIndex = Number.isFinite(index) && node.images[index]?.url === ref.url
+        ? index
+        : node.images.findIndex(img => img?.url === ref.url);
+    if(targetIndex < 0 || !node.images[targetIndex]) return false;
+    node.images[targetIndex] = {
+        ...node.images[targetIndex],
         tempShUrl:uploadedUrl,
-        originalLocalUrl:node.images[index].originalLocalUrl || ref.url,
+        originalLocalUrl:node.images[targetIndex].originalLocalUrl || ref.sourceUrl || ref.url,
         kind:mediaKindForItem(ref)
     };
     return true;
 }
 async function uploadMediaRefToCloud(ref){
     const kind = mediaKindForItem(ref);
-    if(!ref?.url) throw new Error('没有可上传的媒体');
-    if(/^https?:\/\//i.test(ref.url)) return ref.url;
+    const sourceUrl = mediaRefSourceUrl(ref);
+    if(!sourceUrl) throw new Error('没有可上传的媒体');
+    const existing = tempShUploadedUrlFor(sourceUrl);
+    if(existing && existing !== sourceUrl) return existing;
+    if(/^https?:\/\//i.test(sourceUrl)) return sourceUrl;
     const response = await fetch('/api/cloud-video/upload', {
         method:'POST',
         headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({url:ref.url, service:'auto'})
+        body:JSON.stringify({url:sourceUrl, service:'auto'})
     });
     if(!response.ok) throw new Error(await smartResponseErrorMessage(response, '云端上传失败'));
     const data = await response.json();
     const uploadedUrl = data.url || '';
     if(!uploadedUrl) throw new Error('云端没有返回链接');
     settings.videoTempShLinks = [
-        ...(settings.videoTempShLinks || []).filter(item => item?.source !== ref.url),
-        {source:ref.url, url:uploadedUrl, expires:data.expires || '3 days', kind}
+        ...(settings.videoTempShLinks || []).filter(item => item?.source !== sourceUrl),
+        {source:sourceUrl, url:uploadedUrl, expires:data.expires || '3 days', kind}
     ];
-    applyTempShUrlToSmartRef(ref, uploadedUrl);
+    applyTempShUrlToSmartRef({...ref, url:sourceUrl, sourceUrl}, uploadedUrl);
     return uploadedUrl;
 }
 function applyManualVideoUrlToSmartRef(ref, manualUrl){
-    clearManualSmartVideoUrl();
+    if(!manualUrl) return;
+    const sourceUrl = mediaRefSourceUrl(ref) || manualUrl;
     settings.videoTempShLinks = [
-        ...(settings.videoTempShLinks || []),
-        {source:ref?.url || manualUrl, url:manualUrl, manual:true}
+        ...(settings.videoTempShLinks || []).filter(item => item?.source !== sourceUrl),
+        {source:sourceUrl, url:manualUrl, manual:true}
     ];
 }
 async function setCurrentSmartManualVideoUrl(){
     const node = activeSettingsSubject();
     if(!node) return '';
     savePromptDraftForCurrent();
-    const request = buildPromptRequest(node, null, true, smartLoopContext);
-    const refs = (request.refs || []).filter(ref => ref?.url && ['image','video'].includes(mediaKindForItem(ref)));
+    const refs = currentUploadMediaRefs(node);
     const firstLocal = refs.find(ref => ref?.url && !isRemoteVideoReferenceUrl(ref.url));
     const firstAny = firstLocal || refs[0] || null;
-    const manual = manualSmartVideoLink();
-    const current = manual?.url || currentSmartMediaLinks()[0] || (firstAny ? tempShUploadedUrlFor(firstAny.url) : '');
+    const linkedUrls = currentSmartMediaLinks(node);
+    const currentLinks = linkedUrls.length ? linkedUrls : (firstAny ? [tempShUploadedUrlFor(mediaRefSourceUrl(firstAny))] : []);
     const value = await openAssetNameDialog({
-        title:'输入媒体网址 / 火山素材 URI',
-        value:isRemoteVideoReferenceUrl(current) ? current : '',
-        placeholder:'https://example.com/media 或 asset://asset-xxx',
-        cancelValue:null
+        title:refs.length > 1 ? `输入 ${refs.length} 个媒体网址 / 火山素材 URI` : '输入媒体网址 / 火山素材 URI',
+        value:currentLinks.filter(isRemoteVideoReferenceUrl).join('\n'),
+        placeholder:refs.length > 1 ? '每行一个链接，按图1/图2顺序对应' : 'https://example.com/media 或 asset://asset-xxx',
+        cancelValue:null,
+        multiline:refs.length > 1
     });
     if(value === null) return '';
-    const url = String(value || '').trim();
-    if(!url){
+    const urls = splitManualMediaUrls(value);
+    if(!urls.length){
         clearManualSmartVideoUrl();
         persistActiveSmartSettings();
         scheduleSave();
@@ -1849,26 +1892,36 @@ async function setCurrentSmartManualVideoUrl(){
         toast('已清除手动网址');
         return '';
     }
-    if(!isRemoteVideoReferenceUrl(url)){
+    const invalid = urls.find(url => !isRemoteVideoReferenceUrl(url));
+    if(invalid){
         toast('请输入 http/https 媒体网址或 asset:// 火山素材 URI');
         return '';
     }
-    applyManualVideoUrlToSmartRef(firstAny, url);
+    clearManualSmartVideoUrl();
+    const targets = refs.length ? refs : [firstAny].filter(Boolean);
+    urls.forEach((url, index) => {
+        const target = targets[index] || targets[targets.length - 1] || {url};
+        applyManualVideoUrlToSmartRef(target, url);
+    });
     persistActiveSmartSettings();
     scheduleSave();
     render();
-    toast('已设置视频网址');
-    return url;
+    toast(`已设置 ${urls.length} 个媒体网址`);
+    return urls[0] || '';
 }
 async function uploadCurrentSmartVideosToCloud(){
     const node = activeSettingsSubject();
     if(!node) return [];
     savePromptDraftForCurrent();
-    const request = buildPromptRequest(node, null, true, smartLoopContext);
-    const refs = (request.refs || []).filter(ref => ref?.url && ['image','video'].includes(mediaKindForItem(ref)));
-    const localRefs = refs.filter(ref => ref?.url && !isRemoteVideoReferenceUrl(ref.url));
+    const refs = currentUploadMediaRefs(node);
+    const localRefs = refs.filter(ref => {
+        const sourceUrl = ref?.sourceUrl || ref?.originalLocalUrl || ref?.url || '';
+        if(!sourceUrl) return false;
+        const uploaded = tempShUploadedUrlFor(sourceUrl);
+        return uploaded !== sourceUrl || !isRemoteVideoReferenceUrl(sourceUrl);
+    });
     if(!localRefs.length){
-        toast('没有需要上传的本地图片或视频');
+        toast('当前输入图片或视频已是云端链接');
         return [];
     }
     const btn = inputThumbsRow?.querySelector('[data-temp-sh-upload-video]');
@@ -2428,11 +2481,13 @@ function renderAssetLibrary(){
     bindAssetItemEvents();
     refreshIcons();
 }
-function openAssetNameDialog({title='', value='', placeholder='', cancelValue='' }={}){
+function openAssetNameDialog({title='', value='', placeholder='', cancelValue='', multiline=false }={}){
     return new Promise(resolve => {
         assetDialogTitle.textContent = title || tr('smart.assetRename');
         assetDialogInput.value = value || '';
         assetDialogInput.placeholder = placeholder || '';
+        assetDialogInput.classList.toggle('is-multiline', Boolean(multiline));
+        assetDialogInput.rows = multiline ? 5 : 1;
         assetDialogBackdrop.classList.add('open');
         assetDialogInput.focus();
         assetDialogInput.select();
@@ -2442,12 +2497,15 @@ function openAssetNameDialog({title='', value='', placeholder='', cancelValue=''
             assetDialogCancel.onclick = null;
             assetDialogInput.onkeydown = null;
             assetDialogBackdrop.onmousedown = null;
+            assetDialogInput.classList.remove('is-multiline');
+            assetDialogInput.rows = 1;
             resolve(result);
         };
         assetDialogOk.onclick = () => cleanup(assetDialogInput.value.trim());
         assetDialogCancel.onclick = () => cleanup(cancelValue);
         assetDialogInput.onkeydown = event => {
-            if(event.key === 'Enter') cleanup(assetDialogInput.value.trim());
+            if(event.key === 'Enter' && !multiline) cleanup(assetDialogInput.value.trim());
+            if(event.key === 'Enter' && multiline && (event.ctrlKey || event.metaKey)) cleanup(assetDialogInput.value.trim());
             if(event.key === 'Escape') cleanup(cancelValue);
         };
         assetDialogBackdrop.onmousedown = event => {
@@ -5545,7 +5603,8 @@ function renderInputThumbsRow(node){
             : (smartImageMode(node) === 'workflow' ? tr('smart.inputUpstreamWorkflow') : tr('smart.inputUpstream'));
         const inner = isVid ? `<video src="${escapeHtml(img.url)}" muted preload="metadata" playsinline disablepictureinpicture controlslist="nodownload noplaybackrate noremoteplayback"></video>` : `<img src="${escapeHtml(img.url)}" draggable="false">`;
         const label = `图${i + 1}`;
-        return `<div class="input-thumb ${isSelf ? 'input-self' : ''}" draggable="false" data-thumb-index="${i}" data-node-id="${escapeHtml(img.nodeId || '')}" data-image-index="${img.imageIndex ?? ''}" data-url="${escapeHtml(img.url || '')}" title="${escapeHtml(`${img.name || tr('smart.inputNum').replace('{n}', String(i + 1))} · ${title}`)}">${inner}<span class="input-thumb-label">${escapeHtml(label)}</span></div>`;
+        const sourceUrl = img.originalLocalUrl || img.url || '';
+        return `<div class="input-thumb ${isSelf ? 'input-self' : ''}" draggable="false" data-thumb-index="${i}" data-node-id="${escapeHtml(img.nodeId || '')}" data-image-index="${img.imageIndex ?? ''}" data-url="${escapeHtml(img.url || '')}" data-source-url="${escapeHtml(sourceUrl)}" title="${escapeHtml(`${img.name || tr('smart.inputNum').replace('{n}', String(i + 1))} · ${title}`)}">${inner}<span class="input-thumb-label">${escapeHtml(label)}</span></div>`;
     }).join('');
     inputThumbsRow.innerHTML = `<div class="input-thumb-list">${thumbsHtml}${dedup.length > 1 ? `<span class="input-thumb-count">${escapeHtml(tr('smart.inputCount').replace('{n}', String(dedup.length)))}</span>` : ''}</div>${showCloudUpload ? `<div class="input-thumb-actions">${renderManualVideoUrlControl()}${renderTempShUploadControl()}</div>` : ''}`;
     bindInputThumbsDrag(node, dedup);
@@ -8131,7 +8190,7 @@ async function runApiVideoGeneration(prompt, refs){
         return item;
     });
     const manualVideo = manualSmartVideoLink()?.url || '';
-    let refVideos = manualVideo ? [manualVideo] : videoRefsOnly(uploadedRefs).map(ref => ref.url);
+    let refVideos = manualVideo ? manualSmartMediaLinks().map(item => item.url).filter(Boolean) : videoRefsOnly(uploadedRefs).map(ref => ref.url);
     const payload = {
         prompt,
         provider_id: settings.videoProvider || 'comfly',
